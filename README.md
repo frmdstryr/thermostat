@@ -20,7 +20,8 @@ board or [redbear duo](https://github.com/redbear/Duo/). I don't recommend the r
 wifi stability is poor and drops often (mtbf of ~8 hrs).
 
 You will need a relay board like this [4 channel relay](https://www.amazon.com/JBtek-Channel-Module-Arduino-Raspberry/dp/B00KTEN3TM?SubscriptionId=AKIAILSHYYTFIVPWUY6Q&tag=duckduckgo-d-20&linkCode=xm2&camp=2025&creative=165953&creativeASIN=B00KTEN3TM)
-or if you don't like clicking noises get a solid state one.
+or if you don't like clicking noises get a solid state one.  If you get one that is active low
+(like many are) you will need to invert the output so they don't go on when the board resets.
  
 > Note: Solid state relays will NOT work with millivolt fireplaces!
 
@@ -31,6 +32,11 @@ And a DHT22, which you can get anywhere.
 If you want a case to mount on the wall. There's a 3d model that can be printed yourself or off of
 3d hubs. Please [contact me](https://codelv.com/contact/) for it.
 
+
+## Donate
+
+If you like this and want more projects like this please [donate](https://www.codelv.com/donate/).
+ 
 
 ## License and Warranty
 
@@ -46,9 +52,3 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
-
-## Donate
-
-If you like this and want more projects like this please [donate](https://www.codelv.com/donate/).
- 
- 
