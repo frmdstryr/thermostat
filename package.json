@@ -1,0 +1,74 @@
+{
+    "cli_root": "/home/jrm/Workspace/Apps/Thermostat/venv/packages/enaml-native-cli", 
+    "name": "Thermostat", 
+    "ios": {
+        "project": "demo", 
+        "arches": [
+            "x86_64", 
+            "i386", 
+            "armv7", 
+            "arm64"
+        ], 
+        "dependencies": {
+            "python": "2.7.13", 
+            "openssl": "1.0.2l", 
+            "ply": "==3.10"
+        }, 
+        "p4i": "/home/jrm/Workspace/Apps/Thermostat/venv/packages/enaml-native-cli/python-for-ios", 
+        "excluded": [], 
+        "python_build_dir": "/home/jrm/Workspace/Apps/Thermostat/build/python"
+    }, 
+    "private": true, 
+    "sources": [
+        "src"
+    ], 
+    "version": "1.0", 
+    "bundle_id": "com.codelv.thermostat", 
+    "android": {
+        "ndk": "/home/jrm/Android/Crystax/crystax-ndk-10.3.2", 
+        "p4a": "/home/jrm/Workspace/Apps/Thermostat/venv/packages/enaml-native-cli/python-for-android", 
+        "arches": [
+            "armeabi-v7a"
+        ], 
+        "dependencies": {
+            "python2crystax":"",
+            "enaml-native": "",
+            "twisted": "",
+            "autobahn": "",
+            "hyperlink": "",
+            "txaio": "",
+            "six": ""
+        },
+        "excluded": [
+            "setuptools",
+            "pkg_resources",
+            "exampleproj",
+            "sqlite3",
+            "unittest",
+            "hotshot",
+            "email",
+            "home",
+            "enaml/workbench*",
+            "enaml/stdlib*",
+            "enaml/applib*",
+            "enaml/scintilla*",
+            "enaml/widgets/[!_tw]*.pyo",
+            "enamlnative/ios*",
+            "enamlnative/core/eventloop*",
+            "twisted/internet/iocpreactor*",
+            "twisted/conch*",
+            "twisted/words*",
+            "twisted/trial*",
+            "twisted/mail*",
+            "twisted/positioning/*",
+            "twisted/protocols/haproxy/*",
+            "autobahn/wamp/*",
+            "autobahn/asyncio/*",
+            "autobahn/test/*",
+            "incremental/test*",
+            "multiprocessing"
+        ],
+        "sdk": "/home/jrm/Android/Sdk", 
+        "python_build_dir": "/home/jrm/Workspace/Apps/Thermostat/build/python"
+    }
+}

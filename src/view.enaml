@@ -1,0 +1,876 @@
+# -*- coding: utf-8 -*-
+import json
+import math
+from atom.api import *
+from enamlnative.core.api import *
+from enamlnative.widgets.api import *
+from enamlnative.core.api import AsyncHttpClient
+from enamlnative.core.app import BridgedApplication
+from pprint import pprint
+from datetime import datetime
+from client import Thermostat
+from models import Theme, Weather, AppState, DateTime
+#from charts.widgets.api import *
+
+def c2f(c,units='imperial'):
+    if units=='metric':
+        return int(c)
+    return int(9/5.0*c+32)
+
+def f2c(f):
+    return (f-32)*5/9.0
+
+def rain_percent(weather):
+    rain = weather.get('rain')
+    if not rain:
+        return 0
+    return int(max(0,min(100,rain['3h']*100)))
+
+
+# def test_error():
+#     print("ABOUT TO BLOW UP")
+#     raise NotImplementedError
+
+# def handle_error(*args, **kwargs):
+#     print("{}, {}".format(args,kwargs))
+
+# d = BridgedApplication.instance().deferred_call(test_error)
+# d.addErrback(handle_error)
+
+#app_state = AppState.instance()
+#app_state.weather.load()
+
+from twisted.python import log
+import sys
+log.startLogging(sys.stdout)
+
+
+enamldef Text(TextView):
+    attr state = AppState.instance()
+    text_color << state.theme.text
+
+enamldef DrawerIcon(IconButton):
+    style = "borderless"
+    text = "{md-dashboard}"
+    text_size = 28
+    text_color = "#fff"
+    padding = (4,4,4,4)
+
+enamldef Drawer(Flexbox):
+    flex_direction = "column"
+    justify_content = "center"
+    align_items = "center"
+    attr pager
+    padding = (5,5,5,5)
+    Looper:
+        iterable << pager.pages or parger.current_index # Trick to reload on page change
+        DrawerIcon:
+            alpha << 1 if pager.current_index == loop_index else 0.6
+            text << "{%s}"%loop_item.icon
+            #text_color = "#cab"
+            clicked :: pager.current_index = loop_index
+    # DrawerIcon:
+    #     text = "{md-settings}"
+    #     clicked :: pager.current_index = 1
+
+enamldef Border(Flexbox):
+    layout_height = "1"
+    background_color = "#ccc"
+
+
+enamldef Card(Flexbox):
+    attr state = AppState.instance()
+    attr title = ""
+    alias content
+    margins = (5,5,5,5)
+    layout = dict(min_width=480, flex_grow=1)
+    layout_height = "wrap_content"
+    layout_width = "wrap_content"
+    background_color << state.theme.bg
+    Flexbox:
+        flex_direction = "column"
+        Flexbox:
+            justify_content = "center"
+            align_items = "center"
+            layout_height = "wrap_content"
+            padding = (10,10,10,10)
+            Text:
+                text << title
+                text_size = 18
+            #Icon:
+            #    text = "{fa-arrow-down}"
+            #    padding = (0,0,10,0)
+        Block: content:
+            pass
+
+enamldef Dashboard(PagerFragment): view:
+    attr state = AppState.instance()
+    icon = 'md-dashboard'
+    ScrollView:
+        attr state << view.state
+        background_color << state.theme.bg
+        Flexbox:
+            #flex_direction = "column"
+            #justify_content = "center"
+            flex_wrap = "wrap"
+            padding = (10,10,10,10)
+            attr thermostat = view.state.thermostat
+            Card:
+                title = "Inside"
+                Block:
+                    block << parent.content
+                    Flexbox:
+                        attr state << view.state
+                        layout_height = "wrap_content"
+                        flex_direction = "column"
+                        justify_content = "center"
+                        align_items = "center"
+                        layout = dict(min_height=480)
+                        Text:
+                            text = "temperature"
+                            text_color << state.theme.text_light
+                        Conditional:
+                            condition << thermostat.connected
+                            Text:
+                                text << "{}°".format(c2f(thermostat.insideTemp,state.units)) if thermostat.connected else "N/A"
+                                font_family = "sans-serif-condensed-light"
+                                text_size = 124
+                        Conditional:
+                            condition << not thermostat.connected
+                            ActivityIndicator:
+                                style = "large"
+                    #Border:
+                    #    pass
+                    Flexbox:
+                        layout_height = "50"
+                        justify_content = "center"
+                        align_items = "center"
+                        Text:
+                            padding = (10, 0, 10, 0)
+                            text <<"{}%".format(int(thermostat.insideHumidity)) if thermostat.connected else "N/A"
+                            text_size = 24
+                        Icon:
+                            text = "{wi_raindrop}"
+                            text_color << state.theme.text_light
+                            text_size = 24
+
+
+            Card:
+                title = "System"
+                layout_height = "wrap_content"
+                #layout = dict(max_width=300)
+                Block:
+                    block << parent.content
+                    Flexbox:
+                        layout_height = "wrap_content"
+                        justify_content = "center"
+                        Text:
+                            text = "set point"
+                            text_color << state.theme.text_light
+                    Flexbox:
+                        layout_height = "wrap_content"
+                        justify_content = "space_around"
+                        layout = dict(min_height=480)
+                        Flexbox:
+                            flex_direction = "column"
+                            justify_content = 'center'
+                            align_items = 'center'
+                            Text:
+                                text << "{}°".format(c2f(thermostat.desiredTemp,state.units))
+                                font_family = "sans-serif-light"
+                                text_size = 48
+                        Flexbox:
+                            flex_direction = "column"
+                            justify_content = 'center'
+                            IconButton:
+                                style = "borderless"
+                                text = "{md-keyboard-arrow-up}"
+                                text_size = 32
+                                clicked ::
+                                    v = 1 if state.units=='metric' else round(5/9.0, 2)
+                                    thermostat.desiredTemp +=v
+                                text_color << state.theme.text
+                            IconButton:
+                                style = "borderless"
+                                text = "{md-keyboard-arrow-down}"
+                                text_size = 32
+                                clicked ::
+                                    v = 1 if state.units=='metric' else round(5/9.0, 2)
+                                    thermostat.desiredTemp -=v
+                                text_color << state.theme.text
+
+                    #Border:
+                    #    pass
+                    Flexbox:
+                        layout_height = "wrap_content"
+                        justify_content = "space_around"
+                        align_items = "center"
+                        Text:
+                            text = "system mode"
+                        Icon:
+                            text << ((thermostat.systemMode=='heat' and "{mdi-fire}") or
+                                     (thermostat.systemMode=='cool' and "{mdi-air-conditioner}") or
+                                     (thermostat.fanActive and "{mdi-fan}") or
+                                     "{wi_na}")
+                            text_color <<  ((thermostat.heatActive and "#ff7f42") or
+                                            (thermostat.coolActive and "#4AC0F2") or
+                                            state.theme.text_light)
+                            text_size = 24
+                        Spinner:
+                            items = list(thermostat.get_member('systemMode').items)
+                            selected << self.items.index(thermostat.systemMode)
+                            selected :: thermostat.systemMode = self.items[selected]
+                                # Icon:
+                                #     text = "{wi_snowflake_cold}"
+                                #     text_color <<  "#00F" if thermostat.coolActive else state.theme.text_light
+                                #     text_size = 24
+                    Flexbox:
+                        layout_height = "wrap_content"
+                        justify_content = "space_around"
+                        align_items = "center"
+                        Text:
+                            text = "fan"
+                        Spinner:
+                            items = ['auto', 'on']
+                            selected << int(thermostat.fanActive)
+                            selected :: thermostat.fanActive = bool(change['value'])
+
+
+enamldef Weather(PagerFragment): view:
+    attr state = AppState.instance()
+    icon = 'md-wb-cloudy'
+    SwipeRefreshLayout:
+        refreshed :: view.state.weather.load()
+        ScrollView:
+            layout_height = "match_parent"
+            layout_width = "match_parent"
+            background_color << view.state.theme.bg
+            attr weather << view.state.weather
+            Flexbox:
+                flex_direction = "column"
+                justify_content = "center"
+                layout_height = "match_parent"
+                layout_width = "match_parent"
+                Conditional:
+                    condition << weather.loading_current
+                    Flexbox:
+                        flex_direction="column"
+                        justify_content = "center"
+                        align_items = "center"
+                        layout = dict(min_height=480)
+                        ActivityIndicator:
+                            style = "small"
+                        Text:
+                            text = "Loading current conditions..."
+                Conditional:
+                    condition << (bool(weather.current)
+                                    and not weather.loading_current)
+                    Flexbox:
+                        padding = (10,10,10,10)
+                        Card:
+                            title << "{}".format(weather.current['name'])
+                            background_color << view.state.theme.bg
+                            Block:
+                                block << parent.content
+                                Flexbox:
+                                    layout_height = "wrap_content"
+                                    flex_direction = "column"
+                                    justify_content = "center"
+                                    align_items = "center"
+                                    layout = dict(min_height=480)
+                                    Flexbox:
+                                        layout_height = "wrap_content"
+                                        justify_content = "center"
+                                        align_items = "center"
+                                        Icon:
+                                            padding = (10,10,10,10)
+                                            text << "{%s}"%(
+                                                weather.icons[weather.current['weather'][0]['id']]['icon']
+                                                if weather.current.get('weather') else 'wi_na')
+                                            text_size = 32
+                                        Text:
+                                            text << "{}".format(
+                                                weather.current['weather'][0]['description'].title()
+                                                if weather.current.get('weather') else ''
+                                                )
+                                            text_color << state.theme.text_light
+
+                                    Text:
+                                        text << "{}°".format(
+                                            c2f(weather.current['main']['temp'],state.units)
+                                            if weather.current.get('main') else 'N/A'
+                                        )
+                                        font_family = "sans-serif-condensed-light"
+                                        text_size = 124
+                                Flexbox:
+                                    layout_height = "wrap_content"
+                                    justify_content = "space_between"
+                                    align_items = "center"
+                                    Flexbox:
+                                        flex_direction = "column"
+                                        layout_height = "wrap_content"
+                                        align_items="flex_start"
+                                        Text:
+                                            text = "wind"
+                                        Flexbox:
+                                            align_items = "center"
+                                            Text:
+                                                padding = (10, 0, 10, 0)
+                                                text <<"{}".format(
+                                                    int(weather.current['wind']['speed'])
+                                                    if weather.current.get('wind') else 'N/A'
+                                                )
+                                                text_size = 24
+                                            Icon:
+                                                text << "{wi_strong_wind}"
+                                                text_color << state.theme.text_light
+                                                text_size = 24
+                                    Flexbox:
+                                        flex_direction = "column"
+                                        layout_height = "wrap_content"
+                                        align_items = "center"
+                                        Text:
+                                            text = "precipitation"
+                                        Flexbox:
+                                            justify_content = "center"
+                                            align_items = "center"
+                                            Text:
+                                                padding = (10, 0, 10, 0)
+                                                #: Fake rain % based on estimated amount in mm
+                                                text << "{}%".format(rain_percent(weather.current))
+                                                text_size = 24
+                                            Icon:
+                                                text = "{wi_raindrops}"
+                                                text_color << state.theme.text_light
+                                                text_size = 24
+                                    Flexbox:
+                                        flex_direction = "column"
+                                        layout_height = "wrap_content"
+                                        align_items = "flex_end"
+                                        Text:
+                                            text = "humidity"
+                                        Flexbox:
+                                            align_items = "center"
+                                            justify_content = "flex_end"
+                                            Text:
+                                                padding = (10, 0, 10, 0)
+                                                text <<"{}%".format(
+                                                    weather.current['main']['humidity']
+                                                    if weather.current.get('main') else 'N/A'
+                                                )
+                                                text_size = 24
+                                            Icon:
+                                                text = "{wi_raindrop}"
+                                                text_color << state.theme.text_light
+                                                text_size = 24
+                Border:
+                    pass
+                Conditional:
+                    condition << view.state.weather.loading_forecast
+                    Flexbox:
+                        flex_direction = "column"
+                        justify_content = "center"
+                        align_items = "center"
+                        layout = dict(min_height=240)
+                        ActivityIndicator:
+                            style = "small"
+                        Text:
+                            text = "Loading forecast..."
+                Conditional:
+                    condition << (bool(view.state.weather.forecast)
+                                    and not view.state.weather.loading_forecast)
+                    #Border:
+                    #    pass
+
+                    Flexbox:
+                        flex_direction = "column"
+                        layout_height = "wrap_content"
+                        #: Group each day
+                        attr daily_forecast << view.state.weather.daily_forecast
+                        Looper:
+                            iterable << daily_forecast
+                            Flexbox:
+                                layout_height = "wrap_content"
+                                padding = (10,10,10,10)
+                                attr item_time << datetime.fromtimestamp(loop_item[0]['dt'])
+                                Flexbox:
+                                    Text:
+                                        text << "Today" if loop_index == 0 else item_time.strftime('%A')
+                                Flexbox:
+                                    justify_content = "center"
+                                    Icon:
+                                        text << "{%s}"%view.state.weather.icons[loop_item[0]['weather'][0]['id']]['icon']
+                                        text_color << view.state.theme.text_light
+                                Flexbox:
+                                    justify_content = "flex_end"
+                                    Text:
+                                        text << "{}°".format(c2f(max([it['main']['temp'] for it in loop_item]),view.state.units))
+                                        padding = (0,0,10,0)
+                                    Text:
+                                        text << "{}°".format(c2f(min([it['main']['temp'] for it in loop_item]),view.state.units))
+                                        text_color << view.state.theme.text_light
+                            ScrollView:
+                                orientation = "horizontal"
+                                layout_height = "wrap_content"
+                                layout_width = "match_parent"
+                                Flexbox:
+                                    justify_content = "space_between"
+                                    #: 3-hr forcast for next 24 hours
+                                    #attr hourly_forecast = loop_item#view.state.weather.hourly_forecast
+                                    attr parent_index = loop_index
+                                    Looper:
+                                        #: Get the values from today
+                                        iterable << daily_forecast[loop_index]
+                                        Flexbox:
+                                            flex_direction = "column"
+                                            justify_content = "space_between"
+                                            align_items = "center"
+                                            padding = (10,10,10,10)
+                                            layout_width = "wrap_content"
+                                            attr item_time <<  datetime.fromtimestamp(loop_item['dt'])
+                                            Text:
+                                                text << "now" if (loop_index==0 and parent_index==0) else item_time.strftime('%-I %p' if view.state.time_mode=='12' else '%-H')
+                                            Icon:
+                                                padding = (0,10,0,10)
+                                                text << "{%s}"%view.state.weather.icons[loop_item['weather'][0]['id']]['icon']
+                                                text_color  << view.state.theme.text_light
+                                            Text:
+                                                text << "{}°".format(c2f(loop_item['main']['temp'],view.state.units))
+                                            Text:
+                                                attr current_rain = loop_item.get('rain')
+                                                text << "{}%".format(rain_percent(loop_item))
+                            Border:
+                                pass
+
+enamldef ScheduleDialog(Dialog): dialog:
+    attr entry
+    alias time
+    Flexbox:
+        flex_direction = "column"
+        TimePicker: time:
+            hour_mode = '12'
+            hour << int(entry.text.split(":")[0]) if entry else 0
+            minute << int(entry.text.split(":")[1][0:2]) if entry else 0
+        Flexbox:
+            justify_content = "flex_end"
+            Button:
+                style="borderless"
+                text = "Cancel"
+                clicked :: dialog.show = False
+            Button:
+                style="borderless"
+                text = "Ok"
+                clicked ::
+                    dialog.show = False
+                    entry.time = "{}:{:02d}".format(time.hour,time.minute)
+
+enamldef ScheduleEntry(LinearLayout):
+    orientation = "vertical"
+    attr picker
+    attr time
+    Flexbox:
+        padding = (5, 0, 5, 5)
+        CheckBox:
+            checked = True
+        Button:
+            style = 'borderless'
+            text := time
+            clicked ::
+                picker.entry = self
+                picker.show = True
+
+    Flexbox:
+        padding = (5, 0, 5, 5)
+        IconButton:
+            style = 'borderless'
+            text = "{mdi-fire #ff7f42}  75"
+            #padding = (0, 0, 5, 0)
+        IconButton:
+            text = "{mdi-air-conditioner #4AC0F2}  72"
+            style = 'borderless'
+
+
+enamldef Schedules(PagerFragment): view:
+    attr state = AppState.instance()
+    icon = 'md-today'
+    ScrollView:
+        background_color << view.state.theme.bg
+        # Flexbox:
+        #     flex_direction = "column"
+        #     ScheduleDialog: time_picker:
+        #         pass
+        ScrollView:
+            orientation = "horizontal"
+            layout_width = "match_parent"
+            GridLayout:
+                columns = 5
+                Looper:
+                    iterable = ['Day', 'Wake', 'Leave', 'Return', 'Sleep']
+                    Flexbox:
+                        padding = (10,10,10,10)
+                        background_color << view.state.theme.bg if not (loop_index & 1) else view.state.theme.bg_light
+                        Text:
+                            text = loop_item
+                            text_size = 18
+                            font_family = "sans-serif-light"
+                Looper:
+                    iterable = ["Mon", "Tues", "Wed", "Thurs", "Fri", "Sat", "Sun"]
+                    #Flexbox:
+                    #    #justify_content = "space_around"
+                    #    #align_items = "center"
+                    #    padding = (10, 10, 10, 10)
+                    Flexbox:
+                        flex_direction = 'column'
+                        justify_content = 'center'
+                        Text:
+                            padding = (5, 0, 5, 0)
+                            text = loop_item
+                            text_size = 18
+                            font_family = "sans-serif-light"
+                    Looper:
+                        iterable << ["7:00am", "9:00am" ,"5:00pm", "10:00pm"]
+                        ScheduleEntry:
+                            time = loop_item
+                            picker << time_picker
+                            background_color << view.state.theme.bg if (loop_index & 1) else view.state.theme.bg_light
+    ScheduleDialog: time_picker:
+        pass
+
+
+
+
+enamldef History(PagerFragment): view:
+    attr state = AppState.instance()
+    icon = 'md-history'
+#    Flexbox:
+#        BarChart:
+#            background_color << view.state.theme.bg
+#            DataSet:
+#                data = [(i, i) for i in range(10)]
+
+enamldef Fireplace(PagerFragment): view:
+    attr state = AppState.instance()
+    icon = 'wi_fire'
+    Flexbox:
+        flex_direction = "column"
+        justify_content = "center"
+        align_items = "center"
+        background_color << view.state.theme.bg
+        attr thermostat << view.state.thermostat
+        Conditional:
+            condition << thermostat.fireplacePresent
+            Text:
+                padding = (0,0,0,10)
+                text = "Fireplace control"
+                text_color << view.state.theme.text_light
+            IconButton:
+                attr state << view.state
+                style = "borderless"
+                text = "{wi_fire}"
+                alpha << 1 if state.fireplace else 0.5
+                text_color << "#ff7f42" if thermostat.fireplaceActive else state.theme.text
+                text_size = 128
+                clicked:: thermostat.fireplaceActive = not thermostat.fireplaceActive
+            Text:
+                padding = (0,10,0,0)
+                text << "ON" if thermostat.fireplaceActive else "OFF"
+                text_color << view.state.theme.text_light
+            Text:
+                padding = (0,10,0,0)
+                text << "tap the flames to turn "+("off" if thermostat.fireplaceActive else "on")
+                text_color << view.state.theme.text_light
+
+        Conditional:
+            condition << not thermostat.fireplacePresent
+            Icon:
+                text = "{md-feedback}"
+                text_size = 64
+            Text:
+                padding = (0,10,0,0)
+                text = "Fireplace control not enabled"
+                text_color << view.state.theme.text_light
+            Button:
+                style = "borderless"
+                text = "Settings"
+                clicked::
+                    #: TODO: Depends on position!
+                    view.state.current_screen += 2
+
+
+
+enamldef TitleRow(Flexbox):
+    attr state = AppState.instance()
+    layout_height = "wrap_content"
+    justify_content = "space_between"
+    align_items = "center"
+    padding = (10,20,10,20)
+    attr title
+    padding = (10, 10, 10, 10)
+    Text:
+        text << title
+        text_size = 18
+
+enamldef SettingsRow(Flexbox):
+    attr state = AppState.instance()
+    layout_height = "wrap_content"
+    justify_content = "space_between"
+    align_items = "center"
+    padding = (10,20,10,20)
+    alias icon
+    alias title
+    alias content
+    alias caption
+    Flexbox:
+        layout_width = "wrap_content"
+        Icon: icon:
+            text = "{md-help}"
+            text_size = 32
+            text_color << state.theme.icon
+            #background_color = "#fab"
+            layout = dict(min_width=56,max_width=64)
+        Flexbox:
+            flex_direction = "column"
+            layout_width="wrap_content"
+            #layout_height="wrap_content"
+            layout = dict(max_width=700)
+            #background_color = "#baf"
+            padding = (10,0,0,0)
+            Text: title:
+                text = "Title"
+                max_lines = 1
+                font_family = "sans-serif-medium"
+            Text: caption:
+                text = "Caption goes here"
+                max_lines = 1
+                text_color = "#999"
+                text_color << state.theme.text_light
+    #Flexbox:
+        #ayout_width = "wrap_content"
+    Block: content:
+        pass
+
+enamldef OptionSetting(SettingsRow):
+    alias option
+    Block:
+        block << parent.content
+        Spinner: option:
+            #text_color << state.theme.text
+            pass
+
+enamldef ToggleSetting(SettingsRow):
+    alias switch
+    Block:
+        block << parent.content
+        Switch: switch:
+            pass
+
+enamldef TextSetting(Flexbox):
+    attr state = AppState.instance()
+    layout_height = "wrap_content"
+    #justify_content = "space_between"
+    align_items = "center"
+    padding = (10,20,10,20)
+    alias icon
+    alias title
+    alias caption
+    alias input
+    Icon: icon:
+        text = "{md-help}"
+        text_size = 32
+        text_color = "#356782"
+        layout_width = "56"
+        #background_color = "#fab"
+    Flexbox:
+        #flex_direction = "column"
+        justify_content = "space_between"
+        #background_color = "#baf"
+        padding = (10,0,0,0)
+        Flexbox:
+            flex_direction = "column"
+            align_items = "flex_start"
+            layout_width = "wrap_content"
+            Text: title:
+                text = "Title"
+                max_lines = 1
+                font_family = "sans-serif-medium"
+            Text: caption:
+                text = "Caption goes here"
+                max_lines = 1
+                text_color = "#999"
+                text_color << state.theme.text_light
+        EditText: input:
+            pass
+
+enamldef Settings(PagerFragment): view:
+    attr state = AppState.instance()
+    icon = 'md-settings'
+    ScrollView:
+        attr state << view.state
+        background_color << state.theme.bg
+        Flexbox:
+            flex_direction = "column"
+            attr thermostat << view.state.thermostat
+            Flexbox:
+                flex_direction = "column"
+                margins = (0, 20, 0, 0)
+                TitleRow:
+                    title = "Settings"
+                OptionSetting:
+                    title.text = "Units"
+                    icon.text = "{md-language}"# if state.units=='metric' else "{wi_fahrenheit}"
+                    caption.text = "Display units"
+                    option.items = list(AppState.units.items)
+                    option.selected << option.items.index(state.units)
+                    option.selected :: state.units = self.items[change['value']]
+                OptionSetting:
+                    title.text = "Theme"
+                    caption.text = "Colors and text"
+                    icon.text = "{md-format-color-fill}"
+                    option.items = [t.name for t in state.themes]
+                    option.selected << option.items.index(state.theme.name)
+                    option.selected :: state.theme = state.themes[change['value']]
+                TextSetting:
+                    title.text = "Weather location"
+                    icon.text = "{md-map}"
+                    caption.text = "For forecast"
+                    input.text := state.weather.location
+                    input.placeholder = "City or zipcode"
+                    input.input_type = "number"
+                TitleRow:
+                    title = "System"
+                TextSetting:
+                    title.text = "IP Address"
+                    caption.text = "Thermostat IP address"
+                    icon.text = "{mdi-wifi}"
+                    input.text := state.address
+                    #input.input_type = "number_decimal"
+                OptionSetting:
+                    title.text = "Hysteresis"
+                    caption.text = "Cutoff temp "#.format(thermostat.hysteresisTemp)
+                    icon.text = "{wi_thermometer}"
+                    option.items = [i/10.0 for i in range(0, 100)]
+                    option.selected << option.items.index(round(thermostat.hysteresisTemp * (1
+                                            if state.units == 'metric' else 9/5.0), 1))
+                    option.selected ::
+                        v = round(self.items[change['value']] * (
+                                        1 if state.units == 'metric' else 5/9.0), 1)
+                        thermostat.hysteresisTemp = v
+                ToggleSetting:
+                    title.text = "Fireplace"
+                    icon.text = "{wi_fire}"
+                    caption.text = "Enable fireplace control"
+                    switch.checked := thermostat.fireplacePresent
+                TitleRow:
+                    title = "Developer"
+                ToggleSetting:
+                    #icon.te
+                    icon.text = "{md-developer-mode}"
+                    title.text = "Developer mode"
+                    caption.text = "Enable developer settings"
+                    switch.checked := view.state.developer_mode
+                Conditional:
+                    condition << view.state.developer_mode
+                    ToggleSetting:
+                        #icon.te
+                        icon.text = "{md-usb}"
+                        title.text = "Thermostat connection"
+                        caption.text = "Simulate the thermostat connection"
+                        switch.checked := view.state.connected
+                    TitleRow:
+                        title = "Pinout"
+                    OptionSetting:
+                        title.text = "Temp 1 pin"
+                        icon.text = "{mdi-source-pull}"
+                        caption.text = "Zone 1"
+                        option.items = list(range(20))
+                        option.selected << thermostat.tempPin1
+                        option.selected :: thermostat.tempPin1 = self.items[change['value']]
+                    OptionSetting:
+                        title.text = "Temp 2 pin"
+                        icon.text = "{mdi-source-pull}"
+                        caption.text = "Zone 2"
+                        option.items = list(range(20))
+                        option.selected << thermostat.tempPin2
+                        option.selected :: thermostat.tempPin2 = self.items[change['value']]
+                    OptionSetting:
+                        title.text = "Fan pin"
+                        icon.text = "{mdi-source-pull}"
+                        caption.text = "Air handler relay"
+                        option.items = list(range(20))
+                        option.selected << thermostat.fanPin
+                        option.selected :: thermostat.fanPin = self.items[change['value']]
+                    OptionSetting:
+                        title.text = "Heat pin"
+                        icon.text = "{mdi-source-pull}"
+                        caption.text = "Heater relay"
+                        option.items = list(range(20))
+                        option.selected << thermostat.heatPin
+                        option.selected :: thermostat.heatPin = self.items[change['value']]
+                    OptionSetting:
+                        title.text = "Cool pin"
+                        caption.text = "AC relay"
+                        icon.text = "{mdi-source-pull}"
+                        option.items = list(range(20))
+                        option.selected << thermostat.coolPin
+                        option.selected :: thermostat.coolPin = self.items[change['value']]
+                    OptionSetting:
+                        title.text = "Fireplace pin"
+                        caption.text = "Fireplace relay"
+                        icon.text = "{mdi-source-pull}"
+                        option.items = list(range(20))
+                        option.selected << thermostat.fireplacePin
+                        option.selected :: thermostat.fireplacesPin = self.items[change['value']]
+
+
+
+enamldef Log(PagerFragment): view:
+    attr state = AppState.instance()
+    icon = 'md-storage'
+    ScrollView:
+        attr state << view.state
+        background_color << state.theme.bg
+        Flexbox:
+            flex_direction = "column"
+            Text:
+                text = "Message Log"
+                font_family = "sans-serif-light"
+                text_size  = 18
+                padding = (10, 10, 10, 10)
+            Looper:
+                #: Trigger update on every change
+                iterable << reversed(state.messages) if state.message_count else []
+                Flexbox:
+                    padding = (10, 10, 10, 20)
+                    Text:
+                        text = str(loop_item)
+                Border:
+                    pass
+
+
+enamldef ContentView(Flexbox): view:
+    attr state = AppState.instance() or AppState()
+    Drawer:
+        pager << view_pager
+        background_color << state.theme.drawer
+        layout_width = "wrap_content"
+    ViewPager: view_pager:
+        offscreen_page_limit = len(self.pages)
+        paging_enabled = False
+        current_index := state.current_screen
+        current_index ::
+            if change['value']==1 and state.weather.outdated:
+                state.weather.load()
+        Dashboard:
+            cached = True
+        Weather:
+            cached = True
+        Fireplace:
+            cached = True
+        #Schedules:
+        #    pass
+        #History:
+        #    pass
+        Settings:
+            cached = True
+        #Log:
+        #    pass
