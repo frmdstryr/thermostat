@@ -161,17 +161,49 @@ class Weather(Model):
         print("Fetching {}".format(url))
         self.client.fetch(url).then(self.on_load_forecast)
 
-    def on_load_current(self,response):
+    def on_load_current(self, response):
+        if not response.ok:
+            return
+
         #: Source data
-        self.current = json.loads(response.body)
-        #print("Current:")
-        #pprint(self.current)
+        current = json.loads(response.body)
+        print("Current:")
+        print(current)
+        #: Make sure it's good before saving it
+
+        for k in ['name', 'main', 'weather', 'wind']:
+            if k not in current:
+                print("Current weather response is invalid: "
+                      "{}".format(current))
+                #: Required key is missing, something is not right
+                return
+
+        self.current = current
         self.outdated = False
         self.loading_current = False
 
     def on_load_forecast(self, response):
-        #: Source data
-        self.forecast = json.loads(response.body)
+        if not response.ok:
+            return
+            #: Source data
+        forecast = json.loads(response.body)
+        print("Forecast:")
+        print(forecast)
+        #: Make sure it's good before saving it
+        valid = True
+        if 'list' not in forecast:
+            valid = False
+        for item in forecast.get('list', []):
+            if 'weather' not in item:
+                valid = False
+                break
+        if not valid:
+            print("Forecast weather response is invalid: "
+                  "{}".format(forecast))
+            #: Required key is missing, something is not right
+            return
+
+        self.forecast = forecast
         #print("Forecast:")
         #pprint(self.forecast)
 

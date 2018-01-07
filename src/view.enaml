@@ -404,7 +404,10 @@ enamldef Weather(PagerFragment): view:
                                 Flexbox:
                                     justify_content = "flex_end"
                                     Text:
-                                        text << "{}°".format(c2f(max([it['main']['temp'] for it in loop_item]),view.state.units))
+                                        text << "{}°".format(
+                                            c2f(max([it['main']['temp'] for it in loop_item]),view.state.units)
+                                            if weather.current.get('wind') else 'N/A'
+                                        )
                                         padding = (0,0,10,0)
                                     Text:
                                         text << "{}°".format(c2f(min([it['main']['temp'] for it in loop_item]),view.state.units))
