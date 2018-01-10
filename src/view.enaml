@@ -399,7 +399,8 @@ enamldef Weather(PagerFragment): view:
                                 Flexbox:
                                     justify_content = "center"
                                     Icon:
-                                        text << "{%s}"%view.state.weather.icons[loop_item[0]['weather'][0]['id']]['icon']
+                                        attr item = loop_item[0]['weather'][0]['id']
+                                        text << "{%s}"%view.state.weather.icons[item]['icon']
                                         text_color << view.state.theme.text_light
                                 Flexbox:
                                     justify_content = "flex_end"

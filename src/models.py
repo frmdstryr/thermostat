@@ -333,7 +333,7 @@ class AppState(State):
         try:
             host, port = self.address.split(":")
         except ValueError:
-            host, port = "192.168.1.101:8888"
+            host, port = "192.168.1.101:8888".split(":")
         t = Thermostat()
         t.listener = self._on_message
         self.connection = reactor.connectTCP(str(host), int(port), t)

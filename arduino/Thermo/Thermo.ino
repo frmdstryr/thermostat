@@ -18,7 +18,7 @@ public:
 	Declare(Thermostat, getState, JsonObject&);
 	Declare(Thermostat, setState, JsonObject&);
 	void processSensors();
-	void reconnectWifi();
+	void reconnectWifi(unsigned int timeout);
 
 protected:
 	void loadState();
@@ -54,8 +54,8 @@ private:
 	Member(int,coolPin,12);
 
 	Member(String,wifiSsid,String("ssid"));
-  Member(String,wifiPass,String("password"));
-  Member(String,wifiIp,String("0.0.0.0"));
+	Member(String,wifiPass,String("password"));
+	Member(String,wifiIp,String("0.0.0.0"));
 
 	// Config
 	Member(bool,tempSensor1Present,true);
@@ -168,7 +168,10 @@ void Thermostat::configurePins() {
  * Make sure initial state matches the outputs
  */
 void Thermostat::configureOutputs() {
-	//ppass
+	digitalWrite(fanPin,(fanActive)? HIGH: LOW);
+	digitalWrite(fireplacePin,(fireplaceActive)? HIGH: LOW);
+	digitalWrite(coolPin,(coolActive)? HIGH: LOW);
+	digitalWrite(heatPin,(heatActive)? HIGH: LOW);
 }
 
 /**
@@ -258,12 +261,13 @@ void Thermostat::onConfigChanged(JsonObject &change) {
  */
 void Thermostat::onWifiChanged(JsonObject &change) {
 	Serial.println("onWifiChanged");
-	reconnectWifi();
+	reconnectWifi(30000);
 	notifyAll(change);
 }
 
-void Thermostat::reconnectWifi() {
+void Thermostat::reconnectWifi(unsigned int timeout) {
     char addr[16];
+    unsigned long startTime = millis();
     Serial.println("Reconnecting to wifi...\n");
     WiFi.off();
     delay(100);
@@ -274,15 +278,25 @@ void Thermostat::reconnectWifi() {
     WiFi.connect();
 
     Serial.println("Waiting for an IP address...\n");
-    while (!WiFi.ready()) {
+    while (!WiFi.ready() && (millis()-startTime) < timeout) {
         delay(1000);
+    }
+
+    if ((millis()-startTime) < timeout) {
+        Serial.println("Wifi connection timed out...");
+        return;
     }
 
     // Wait IP address to be updated.
     IPAddress localIP = WiFi.localIP();
-    while (localIP[0] == 0) {
+    while (localIP[0] == 0 && ((millis()-startTime) < timeout)) {
   	  localIP = WiFi.localIP();
       delay(1000);
+    }
+
+    if ((millis()-startTime) < timeout) {
+        Serial.println("Wifi IP address timed out...");
+        return;
     }
 
     sprintf(addr, "%u.%u.%u.%u", localIP[0], localIP[1], localIP[2], localIP[3]);
@@ -387,7 +401,7 @@ void Thermostat::onThermostatChanged(JsonObject &change) {
 	if (mode.equals("heat")) {
 		coolActive = false;
 		if (insideTemp <= desiredTemp) {
-			heatActive =true;
+			heatActive = true;
 		} else if (insideTemp >= desiredTemp + hysteresisTemp) {
 			heatActive = false;
 		}
@@ -420,8 +434,8 @@ JsonObject& Thermostat::getState(JsonObject &params) {
 	state["tempPin1"] = (int)  tempPin1;
 	state["tempPin2"] = (int)  tempPin2;
 	state["ledPin"] = (int) ledPin;
-	state ["fanPin"] = (int) fanPin;
-	state ["fireplacePin"] = (int) fireplacePin;
+	state["fanPin"] = (int) fanPin;
+	state["fireplacePin"] = (int) fireplacePin;
 	state["heatPin"] = (int) heatPin;
 	state["coolPin"] = (int) coolPin;
 
@@ -558,8 +572,8 @@ JsonObject& Thermostat::setState(JsonObject &params) {
 		wifiSsid = String((const char*)params["wifiSsid"]);
 	}
 	if (params.containsKey("wifiPass")) {
-    wifiPass = String((const char*)params["wifiPass"]);
-  }
+        wifiPass = String((const char*)params["wifiPass"]);
+    }
 
 	if (!params.containsKey("loading")) {
 		saveState();
@@ -567,6 +581,11 @@ JsonObject& Thermostat::setState(JsonObject &params) {
 	return getState(params);
 }
 
+/**
+ * Read from the sensors.
+ * This will trigger any change handlers when the values
+ * change.
+ */
 void Thermostat::processSensors() {
 	if (millis()-lastUpdate<2000) {
 		return;
@@ -599,8 +618,10 @@ void setup() {
   Serial.begin(115200);
   Serial.println("Initializing JSON RPC server");
 
-  // Setup wifi
-  server.reconnectWifi();
+  // Setup wifi with a timeout so if Wifi gets
+  // jacked up for whatever reason and never comes
+  // up the thermostat will continue
+  server.reconnectWifi(30000);
 
   /* add setup code here */
   // Set number of clients
@@ -614,12 +635,12 @@ void loop() {
 	server.process();
 	server.processSensors();
 
-  // Sleep
-  delay(10);
+    // Sleep
+    delay(100);
 
 	// Ensure wifi is good
 	if (!WiFi.ready()) {
 	  // Should i just reset here??
-	  System.reset();
+	  server.reconnectWifi(30000);
 	}
 }
