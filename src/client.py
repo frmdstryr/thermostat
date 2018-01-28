@@ -1,4 +1,4 @@
-
+import math
 import json
 import logging
 import traceback
@@ -281,6 +281,9 @@ class Thermostat(ReconnectingClientFactory, Atom):
             k, v = change['name'], change['value']
             self._syncing = True
             try:
+                # Discard all nan values
+                if isinstance(v, float) and math.isnan(v):
+                    return
                 if hasattr(self, k):
                     setattr(self, k, v)
             except Exception as e:
